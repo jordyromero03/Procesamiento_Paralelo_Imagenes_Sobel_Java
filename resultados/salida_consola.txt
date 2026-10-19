@@ -1,0 +1,13 @@
+Imagen: 9504 x 6336 (60.2 MP)
+Conversion a gris: 989.8 ms
+
+Hilos | Tiempo (ms) | Speedup | Eficiencia | Igual al secuencial
+------+-------------+---------+------------+--------------------
+  sec |       589.7 |   1.00x |     100.0% | -
+    1 |       620.6 |   0.95x |      95.0% | si
+    2 |       250.8 |   2.35x |     117.6% | si
+    4 |       195.8 |   3.01x |      75.3% | si
+    8 |        76.3 |   7.73x |      96.6% | si
+   16 |        78.7 |   7.49x |      46.8% | si
+
+Resultados guardados en resultados/
