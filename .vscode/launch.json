@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "DeteccionBordes",
+            "request": "launch",
+            "mainClass": "DeteccionBordes",
+            "cwd": "${workspaceFolder}",
+            "vmArgs": "-Xmx3g",
+            "args": ""
+        }
+    ]
+}
