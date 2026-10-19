@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Informe Práctica 03 – Detección de bordes con Java Threads</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; line-height: 1.6; max-width: 860px; margin: 0 auto; padding: 24px 16px; color: #222; background: #fff; }
+  h1 { font-size: 1.6rem; }
+  h2 { margin-top: 40px; border-bottom: 2px solid #ddd; padding-bottom: 4px; }
+  h3 { margin-top: 24px; }
+  table { border-collapse: collapse; margin: 12px 0; }
+  th, td { border: 1px solid #bbb; padding: 6px 12px; }
+  th { background: #f0f0f0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  pre { background: #f5f5f5; border: 1px solid #ddd; padding: 10px; overflow-x: auto; font-size: 0.88rem; line-height: 1.45; }
+  code { background: #f5f5f5; padding: 1px 4px; }
+  figure { margin: 18px 0; }
+  figure img { width: 100%; height: auto; border: 1px solid #ccc; display: block; }
+  figcaption { font-size: 0.88rem; color: #555; margin-top: 6px; }
+  .par { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .par { grid-template-columns: 1fr; } }
+  .nota { background: #f6f9fe; border-left: 4px solid #2f6fca; padding: 8px 12px; margin: 14px 0; }
+  .mascaras { display: flex; flex-wrap: wrap; gap: 32px; margin: 12px 0; }
+  .mascaras table td { width: 36px; text-align: center; font-family: monospace; font-size: 1rem; }
+  .mascaras caption { font-weight: bold; padding-bottom: 4px; }
+  .grafico { margin: 16px 0; max-width: 640px; }
+  .fila { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .etiqueta { width: 90px; font-size: 0.9rem; }
+  .pista { position: relative; flex: 1; height: 22px; background: #eee; border-radius: 3px; }
+  .ideal { position: absolute; top: 0; left: 0; height: 100%; background: #c9d8ef; border-radius: 3px; }
+  .real { position: absolute; top: 5px; left: 0; height: 12px; background: #2f6fca; border-radius: 3px; }
+  .eficiencia { position: absolute; top: 0; left: 0; height: 100%; background: #3b9a5b; border-radius: 3px; }
+  .valor { width: 60px; text-align: right; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  .leyenda { font-size: 0.85rem; color: #555; }
+  .leyenda span { display: inline-block; width: 12px; height: 12px; margin: 0 4px 0 12px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+
+<h1>Actividad práctica 03 – Detección de bordes con máscaras Sobel y Java Threads</h1>
+<p>
+  <b>Estudiante:</b> Jordy Romero<br>
+  <b>Repositorio:</b> <a href="https://github.com/jordyromero03/Procesamiento_Paralelo_Imagenes_Sobel_Java">github.com/jordyromero03/Procesamiento_Paralelo_Imagenes_Sobel_Java</a><br>
+  <b>Asignatura:</b> Computación Paralela<br>
+  <b>Fecha:</b> 19 de octubre de 2026
+</p>
+
+<h3>Contenido</h3>
+<ol>
+  <li><a href="#objetivo">Objetivo</a></li>
+  <li><a href="#imagen">Imagen seleccionada</a></li>
+  <li><a href="#fundamento">Fundamento: escala de grises y máscaras de Sobel</a></li>
+  <li><a href="#solucion">Cómo resolví la práctica</a></li>
+  <li><a href="#medicion">Metodología de medición</a></li>
+  <li><a href="#resultados">Resultados obtenidos</a></li>
+  <li><a href="#imagenes">Imagen original y transformada</a></li>
+  <li><a href="#analisis">Análisis</a></li>
+  <li><a href="#mejoras">Correcciones a la primera versión del código</a></li>
+  <li><a href="#conclusiones">Conclusiones</a></li>
+  <li><a href="#ejecucion">Cómo ejecutar</a></li>
+  <li><a href="#referencias">Referencias</a></li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="objetivo">1. Objetivo</h2>
+<p>
+  Aplicar detección de bordes a una imagen de alta definición descargada de Unsplash, con un tamaño original mayor
+  a 6000 × 6000 píxeles, <b>definiendo la máscara de convolución</b> y repartiendo el trabajo entre varios hilos con
+  <b>Java Threads</b>. Después comparo el tiempo de la versión secuencial con el de la versión paralela usando
+  distintas cantidades de hilos, y calculo la aceleración (<i>speedup</i>) y la eficiencia.
+</p>
+<p>
+  Para el paralelismo uso directamente la clase <code>Thread</code> con <code>start()</code> y <code>join()</code>.
+  No uso <code>ExecutorService</code>, <code>parallelStream()</code> ni bibliotecas de visión como OpenCV:
+  todo el filtro está escrito a mano con la biblioteca estándar de Java.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="imagen">2. Imagen seleccionada</h2>
+<table>
+  <tr><th>Dato</th><th>Valor</th></tr>
+  <tr><td>Fuente</td><td><a href="https://unsplash.com/photos/cityscape-under-warm-golden-sky-wvjjZTzsdaY">Unsplash – Cityscape under warm golden sky</a></td></tr>
+  <tr><td>Licencia</td><td><a href="https://unsplash.com/license">Licencia Unsplash</a> (uso libre)</td></tr>
+  <tr><td>Resolución original</td><td><b>9504 × 6336 píxeles</b></td></tr>
+  <tr><td>Total de píxeles</td><td>60 217 344 (≈ 60.2 megapíxeles)</td></tr>
+  <tr><td>Archivo</td><td>JPEG, ≈ 19 MB (<code>imagenes/original.jpg</code>)</td></tr>
+  <tr><td>Memoria al decodificar</td><td>≈ 180 MB (3 bytes por píxel, RGB)</td></tr>
+</table>
+<p>
+  Elegí una ciudad porque tiene muchos bordes: edificios, ventanas, antenas y el horizonte. Así el resultado se nota
+  bien. Las dos dimensiones superan 6000 píxeles, y el programa lo comprueba antes de procesar: si la imagen es más
+  pequeña, se detiene con un error.
+</p>
+<div class="nota">
+  La página de Unsplash muestra una versión reducida de 3000 píxeles de ancho. Para tener el tamaño original
+  hay que usar el botón <b>Download → Original size</b>.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="fundamento">3. Fundamento: escala de grises y máscaras de Sobel</h2>
+
+<h3>3.1 Qué es un borde</h3>
+<p>
+  Un borde es un lugar de la imagen donde la intensidad cambia de golpe, por ejemplo entre la pared clara de un
+  edificio y el cielo. Para encontrarlo no hace falta el color, solo el brillo de cada píxel. Por eso primero
+  convierto la imagen a escala de grises.
+</p>
+
+<h3>3.2 Conversión a escala de grises</h3>
+<p>Uso la fórmula de luminancia ITU-R BT.601, que da más peso al verde porque el ojo es más sensible a ese color:</p>
+<pre>Y = 0.299·R + 0.587·G + 0.114·B</pre>
+<p>
+  El resultado es un arreglo <code>byte[] gris</code> de 9504 × 6336 posiciones (≈ 60 MB), donde cada valor va de 0 (negro)
+  a 255 (blanco).
+</p>
+
+<h3>3.3 Definición de las máscaras</h3>
+<p>
+  Una <b>máscara</b> (o <i>kernel</i>) es una matriz pequeña de coeficientes. Para cada píxel, la coloco encima
+  de él y de sus 8 vecinos, multiplico cada coeficiente por el valor del píxel que tiene debajo y sumo los
+  9 productos. Esa operación se llama <b>convolución</b>. Sobel usa dos máscaras de 3 × 3:
+</p>
+<div class="mascaras">
+  <table>
+    <caption>G<sub>x</sub> (horizontal)</caption>
+    <tr><td>−1</td><td>0</td><td>+1</td></tr>
+    <tr><td>−2</td><td>0</td><td>+2</td></tr>
+    <tr><td>−1</td><td>0</td><td>+1</td></tr>
+  </table>
+  <table>
+    <caption>G<sub>y</sub> (vertical)</caption>
+    <tr><td>−1</td><td>−2</td><td>−1</td></tr>
+    <tr><td>0</td><td>0</td><td>0</td></tr>
+    <tr><td>+1</td><td>+2</td><td>+1</td></tr>
+  </table>
+</div>
+<ul>
+  <li><b>G<sub>x</sub></b> resta la columna izquierda de la derecha: mide cuánto cambia el brillo de izquierda a
+      derecha y resalta los <b>bordes verticales</b> (como los lados de un edificio).</li>
+  <li><b>G<sub>y</sub></b> resta la fila de arriba de la de abajo: mide el cambio de arriba hacia abajo y resalta los
+      <b>bordes horizontales</b> (como los techos o el horizonte).</li>
+  <li>La fila o columna central tiene peso 2 para darle más importancia a los vecinos directos. Eso suaviza un poco
+      el ruido.</li>
+  <li>Los coeficientes de cada máscara suman 0, así que en una zona de color uniforme el resultado es 0 (no hay borde).</li>
+</ul>
+<p>Con los dos valores calculo la <b>magnitud del gradiente</b>, que dice qué tan fuerte es el borde:</p>
+<pre>G = √(Gx² + Gy²)      (si pasa de 255 se recorta a 255)</pre>
+<p>En el código las máscaras están definidas así (<code>src/DeteccionBordes.java:19</code>):</p>
+<pre>static final int[][] GX = {
+    {-1, 0, 1},
+    {-2, 0, 2},
+    {-1, 0, 1}
+};
+
+static final int[][] GY = {
+    {-1, -2, -1},
+    { 0,  0,  0},
+    { 1,  2,  1}
+};</pre>
+
+<h3>3.4 Ejemplo numérico</h3>
+<p>Un vecindario de 3 × 3 con un borde vertical (oscuro a la izquierda, claro a la derecha):</p>
+<pre>| 10  10  200 |     Gx = (−10 + 200) + (−20 + 400) + (−10 + 200) = 760
+| 10  10  200 |     Gy = −(10 + 20 + 200) + (10 + 20 + 200)        = 0
+| 10  10  200 |     G  = √(760² + 0²) = 760  →  se recorta a 255 (blanco: hay borde)</pre>
+<p>Un vecindario uniforme:</p>
+<pre>| 90  90  90 |      Gx = 0,  Gy = 0,  G = 0  →  negro (no hay borde)
+| 90  90  90 |
+| 90  90  90 |</pre>
+<p>
+  Los píxeles del marco exterior (primera y última fila y columna) quedan en negro, porque ahí la máscara no tiene
+  los 9 vecinos completos.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="solucion">4. Cómo resolví la práctica</h2>
+
+<h3>4.1 Flujo del programa</h3>
+<pre>
+ original.jpg ──► ImageIO.read ──► ¿ancho y alto &gt; 6000? ──► escala de grises (byte[] gris)
+                                                                     │
+                     ┌───────────────────────────────────────────────┤
+                     ▼                                               ▼
+           Sobel secuencial                               Sobel con 1, 2, 4, 8 y 16 hilos
+           (bucle normal)                                 (Thread + start + join)
+                     │                                               │
+                     └──────────────► comparar salidas ◄─────────────┘
+                                             │
+                          tabla de tiempos, speedup y eficiencia
+                                             │
+                            bordes_secuencial.png / bordes_threads.png
+</pre>
+
+<h3>4.2 Versión secuencial</h3>
+<p>
+  Un solo hilo (el principal) recorre todas las filas interiores de la imagen, de la 1 a la <code>alto − 2</code>,
+  y aplica las dos máscaras a cada píxel. La lógica está en el método <code>sobelFilas</code>
+  (<code>src/DeteccionBordes.java:105</code>), que recibe el rango de filas que debe procesar:
+</p>
+<pre>static void sobelFilas(byte[] gris, byte[] salida, int ancho, int filaInicio, int filaFin) {
+    for (int y = filaInicio; y &lt; filaFin; y++) {
+        for (int x = 1; x &lt; ancho - 1; x++) {
+            int gx = 0;
+            int gy = 0;
+            for (int ky = -1; ky &lt;= 1; ky++) {
+                for (int kx = -1; kx &lt;= 1; kx++) {
+                    int pixel = gris[(y + ky) * ancho + (x + kx)] &amp; 0xFF;
+                    gx += pixel * GX[ky + 1][kx + 1];
+                    gy += pixel * GY[ky + 1][kx + 1];
+                }
+            }
+            int magnitud = (int) Math.sqrt((double) gx * gx + (double) gy * gy);
+            salida[y * ancho + x] = (byte) Math.min(255, magnitud);
+        }
+    }
+}</pre>
+<p>
+  En la versión secuencial se llama una sola vez con todas las filas: <code>sobelFilas(gris, salida, ancho, 1, alto - 1)</code>.
+  No se crea ningún <code>Thread</code>. Así es una referencia limpia para comparar.
+</p>
+<p>
+  En total son 9502 × 6334 ≈ 60.2 millones de píxeles, y cada uno necesita 18 multiplicaciones (9 por máscara):
+  ≈ 1080 millones de multiplicaciones por pasada.
+</p>
+
+<h3>4.3 Versión paralela: descomposición de dominio por filas</h3>
+<p>
+  La idea es repartir la imagen en <b>franjas horizontales</b> de filas seguidas, una por hilo, como si varias
+  personas pintaran una pared y cada una se encargara de una franja. Todos los hilos ejecutan el mismo método
+  <code>sobelFilas</code>; lo único que cambia es el rango de filas.
+</p>
+<pre>
+ Imagen 9504 × 6336 (filas interiores 1 .. 6334), ejemplo con 4 hilos
+
+ ┌──────────────────────────────────────┐  fila 1
+ │  sobel-0   filas    1 .. 1583        │
+ ├──────────────────────────────────────┤
+ │  sobel-1   filas 1584 .. 3167        │      cada hilo lee 1 fila extra arriba y abajo
+ ├──────────────────────────────────────┤      (solo lectura), pero escribe
+ │  sobel-2   filas 3168 .. 4750        │      únicamente en sus propias filas
+ ├──────────────────────────────────────┤
+ │  sobel-3   filas 4751 .. 6334        │
+ └──────────────────────────────────────┘  fila 6334
+</pre>
+<p>Los pasos son:</p>
+<ol>
+  <li><b>Dividir:</b> calculo el inicio y el fin de cada franja para que todas tengan casi el mismo número de filas
+      (con 8 hilos, 791 o 792 filas cada uno).</li>
+  <li><b>Asignar:</b> a cada franja le corresponde un <code>Thread</code> con un objeto <code>TrabajadorSobel</code>
+      (implementa <code>Runnable</code>) que guarda su rango.</li>
+  <li><b>Ejecutar:</b> arranco todos los hilos con <code>start()</code>.</li>
+  <li><b>Esperar:</b> el hilo principal llama a <code>join()</code> sobre cada uno. Funciona como una barrera: no sigue
+      hasta que todos terminan.</li>
+  <li><b>Comprobar:</b> comparo la salida con la secuencial con <code>Arrays.equals</code>.</li>
+</ol>
+<p>El reparto y la creación de hilos (<code>src/DeteccionBordes.java:124</code>):</p>
+<pre>static void sobelConHilos(byte[] gris, byte[] salida, int ancho, int alto, int numeroHilos)
+        throws InterruptedException {
+    int filasInteriores = alto - 2;
+    Thread[] hilos = new Thread[numeroHilos];
+
+    for (int i = 0; i &lt; numeroHilos; i++) {
+        int inicio = 1 + (int) ((long) i * filasInteriores / numeroHilos);
+        int fin = 1 + (int) ((long) (i + 1) * filasInteriores / numeroHilos);
+        hilos[i] = new Thread(new TrabajadorSobel(gris, salida, ancho, inicio, fin), "sobel-" + i);
+        hilos[i].start();
+    }
+    for (Thread hilo : hilos) {
+        hilo.join();   // barrera: esperar a que todos terminen
+    }
+}</pre>
+<p>Y la tarea de cada hilo (<code>src/DeteccionBordes.java:141</code>):</p>
+<pre>static class TrabajadorSobel implements Runnable {
+    ...
+    @Override
+    public void run() {
+        sobelFilas(gris, salida, ancho, filaInicio, filaFin);
+    }
+}</pre>
+<p>
+  Uso <code>(long) i * filasInteriores</code> para que la multiplicación no se desborde en imágenes muy grandes, y
+  calculo el fin del hilo <i>i</i> con la misma fórmula que el inicio del hilo <i>i + 1</i>. Así no queda ninguna
+  fila sin procesar ni ninguna fila procesada dos veces.
+</p>
+
+<h3>4.4 Por qué no hace falta <code>synchronized</code></h3>
+<p>
+  Una condición de carrera aparece cuando dos hilos escriben en la misma posición de memoria, o uno escribe
+  mientras otro lee. En este programa eso no pasa:
+</p>
+<ul>
+  <li>El arreglo <code>gris</code> es de <b>solo lectura</b>: todos los hilos lo leen y ninguno lo modifica. Por eso un
+      hilo puede leer sin problema la fila de la franja vecina.</li>
+  <li>En el arreglo <code>salida</code>, cada hilo escribe solo en <b>sus propias filas</b>. Ningún píxel es escrito
+      por dos hilos.</li>
+  <li><code>join()</code> garantiza que el hilo principal ve todo lo que escribieron los hilos (relación
+      <i>happens-before</i> del modelo de memoria de Java) antes de comparar o guardar.</li>
+</ul>
+<p>
+  Poner <code>synchronized</code> dentro del bucle no aportaría seguridad y obligaría a los hilos a turnarse en cada
+  píxel, lo que eliminaría el paralelismo.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="medicion">5. Metodología de medición</h2>
+<ul>
+  <li><b>Qué se mide:</b> solo el filtro Sobel. La lectura del JPEG, la conversión a gris y la escritura de los PNG
+      quedan fuera, porque no son lo que se está paralelizando.</li>
+  <li><b>Calentamiento del JIT:</b> Java empieza interpretando el código y lo compila a código nativo cuando detecta que
+      se usa mucho. Si midiera la primera ejecución, la versión secuencial (que va primero) saldría más lenta de lo real
+      y la aceleración se vería inflada. Por eso cada configuración se ejecuta <b>3 veces sin medir</b> antes de tomar tiempos.</li>
+  <li><b>Repeticiones:</b> después mido <b>5 veces</b> con <code>System.nanoTime()</code> y uso la <b>mediana</b>, que
+      no se deja arrastrar por una ejecución lenta aislada.</li>
+  <li><b>Configuraciones:</b> secuencial (sin hilos) y 1, 2, 4, 8 y 16 hilos.</li>
+  <li><b>Verificación:</b> cada salida paralela se compara píxel a píxel con la secuencial.</li>
+</ul>
+<p>Fórmulas:</p>
+<pre>Speedup      S = T_secuencial / T_paralelo
+Eficiencia   E = S / N × 100 %        (N = número de hilos)</pre>
+
+<h3>Equipo de pruebas</h3>
+<table>
+  <tr><th>Componente</th><th>Detalle</th></tr>
+  <tr><td>Procesador</td><td>Intel Core i7-11800H @ 2.30 GHz</td></tr>
+  <tr><td>Núcleos</td><td>8 físicos, 16 lógicos (Hyper-Threading, 2 hilos por núcleo)</td></tr>
+  <tr><td>Sistema operativo</td><td>CachyOS Linux</td></tr>
+  <tr><td>Java</td><td>OpenJDK 21, ejecutado con <code>-Xmx3g</code></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="resultados">6. Resultados obtenidos</h2>
+
+<p>Salida del programa (guardada en <code>resultados/salida_consola.txt</code>):</p>
+<pre>Imagen: 9504 x 6336 (60.2 MP)
+Conversion a gris: 989.8 ms
+
+Hilos | Tiempo (ms) | Speedup | Eficiencia | Igual al secuencial
+------+-------------+---------+------------+--------------------
+  sec |       589.7 |   1.00x |     100.0% | -
+    1 |       620.6 |   0.95x |      95.0% | si
+    2 |       250.8 |   2.35x |     117.6% | si
+    4 |       195.8 |   3.01x |      75.3% | si
+    8 |        76.3 |   7.73x |      96.6% | si
+   16 |        78.7 |   7.49x |      46.8% | si</pre>
+
+<h3>6.1 Tabla de resultados</h3>
+<table>
+  <tr><th>Configuración</th><th>Filas por hilo</th><th>Tiempo (ms)</th><th>Speedup</th><th>Eficiencia</th><th>¿Igual al secuencial?</th></tr>
+  <tr><td>Secuencial</td><td class="num">6334</td><td class="num">589.7</td><td class="num">1.00×</td><td class="num">100.0 %</td><td>–</td></tr>
+  <tr><td>1 hilo</td><td class="num">6334</td><td class="num">620.6</td><td class="num">0.95×</td><td class="num">95.0 %</td><td>sí</td></tr>
+  <tr><td>2 hilos</td><td class="num">3167</td><td class="num">250.8</td><td class="num">2.35×</td><td class="num">117.6 %</td><td>sí</td></tr>
+  <tr><td>4 hilos</td><td class="num">≈ 1584</td><td class="num">195.8</td><td class="num">3.01×</td><td class="num">75.3 %</td><td>sí</td></tr>
+  <tr><td>8 hilos</td><td class="num">≈ 792</td><td class="num">76.3</td><td class="num">7.73×</td><td class="num">96.6 %</td><td>sí</td></tr>
+  <tr><td>16 hilos</td><td class="num">≈ 396</td><td class="num">78.7</td><td class="num">7.49×</td><td class="num">46.8 %</td><td>sí</td></tr>
+</table>
+
+<h3>6.2 Aceleración real frente a la ideal</h3>
+<div class="grafico">
+  <div class="fila"><div class="etiqueta">1 hilo</div><div class="pista"><div class="ideal" style="width:6.25%"></div><div class="real" style="width:5.94%"></div></div><div class="valor">0.95×</div></div>
+  <div class="fila"><div class="etiqueta">2 hilos</div><div class="pista"><div class="ideal" style="width:12.5%"></div><div class="real" style="width:14.69%"></div></div><div class="valor">2.35×</div></div>
+  <div class="fila"><div class="etiqueta">4 hilos</div><div class="pista"><div class="ideal" style="width:25%"></div><div class="real" style="width:18.81%"></div></div><div class="valor">3.01×</div></div>
+  <div class="fila"><div class="etiqueta">8 hilos</div><div class="pista"><div class="ideal" style="width:50%"></div><div class="real" style="width:48.31%"></div></div><div class="valor">7.73×</div></div>
+  <div class="fila"><div class="etiqueta">16 hilos</div><div class="pista"><div class="ideal" style="width:100%"></div><div class="real" style="width:46.81%"></div></div><div class="valor">7.49×</div></div>
+  <p class="leyenda"><span style="background:#c9d8ef"></span>ideal (S = N) <span style="background:#2f6fca"></span>real &nbsp;·&nbsp; escala de 0× a 16×</p>
+</div>
+
+<h3>6.3 Eficiencia</h3>
+<div class="grafico">
+  <div class="fila"><div class="etiqueta">1 hilo</div><div class="pista"><div class="eficiencia" style="width:95%"></div></div><div class="valor">95.0 %</div></div>
+  <div class="fila"><div class="etiqueta">2 hilos</div><div class="pista"><div class="eficiencia" style="width:100%"></div></div><div class="valor">117.6 %</div></div>
+  <div class="fila"><div class="etiqueta">4 hilos</div><div class="pista"><div class="eficiencia" style="width:75.3%"></div></div><div class="valor">75.3 %</div></div>
+  <div class="fila"><div class="etiqueta">8 hilos</div><div class="pista"><div class="eficiencia" style="width:96.6%"></div></div><div class="valor">96.6 %</div></div>
+  <div class="fila"><div class="etiqueta">16 hilos</div><div class="pista"><div class="eficiencia" style="width:46.8%"></div></div><div class="valor">46.8 %</div></div>
+  <p class="leyenda">Barra completa = 100 % (el valor de 2 hilos supera el 100 % y se muestra recortado).</p>
+</div>
+
+<h3>6.4 Variación entre ejecuciones</h3>
+<p>
+  Ejecuté el programa dos veces en el mismo equipo. Los valores cambian, sobre todo con 1, 2 y 4 hilos, pero la
+  tendencia es la misma:
+</p>
+<table>
+  <tr><th>Hilos</th><th>Ejecución 1 (ms)</th><th>S</th><th>Ejecución 2 (ms)</th><th>S</th></tr>
+  <tr><td>Secuencial</td><td class="num">587.1</td><td class="num">1.00×</td><td class="num">589.7</td><td class="num">1.00×</td></tr>
+  <tr><td>1</td><td class="num">555.2</td><td class="num">1.06×</td><td class="num">620.6</td><td class="num">0.95×</td></tr>
+  <tr><td>2</td><td class="num">274.7</td><td class="num">2.14×</td><td class="num">250.8</td><td class="num">2.35×</td></tr>
+  <tr><td>4</td><td class="num">169.3</td><td class="num">3.47×</td><td class="num">195.8</td><td class="num">3.01×</td></tr>
+  <tr><td>8</td><td class="num">90.1</td><td class="num">6.52×</td><td class="num">76.3</td><td class="num">7.73×</td></tr>
+  <tr><td>16</td><td class="num">80.5</td><td class="num">7.29×</td><td class="num">78.7</td><td class="num">7.49×</td></tr>
+</table>
+<p>
+  En las dos ejecuciones todas las salidas paralelas fueron idénticas a la secuencial.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="imagenes">7. Imagen original y transformada</h2>
+<p>
+  Las imágenes de esta sección están reducidas para que el informe cargue rápido. Los archivos completos
+  (9504 × 6336) están en <code>imagenes/original.jpg</code> y <code>resultados/bordes_threads.png</code>.
+</p>
+
+<h3>7.1 Imagen completa</h3>
+<figure>
+  <img src="img/original_reducida.jpg" alt="Fotografía original de una ciudad con edificios bajo un cielo dorado">
+  <figcaption><b>Figura 1.</b> Imagen original (reducida de 9504 × 6336 a 1600 × 1067 para el informe).</figcaption>
+</figure>
+<figure>
+  <img src="img/bordes_reducida.png" alt="Resultado de la detección de bordes Sobel sobre la imagen completa">
+  <figcaption><b>Figura 2.</b> Resultado de Sobel con hilos (reducida a 1600 × 1067). Se distinguen la línea del
+  horizonte y las siluetas de los edificios. El cielo, que es uniforme, queda negro.</figcaption>
+</figure>
+<p>
+  A tamaño reducido la imagen de bordes se ve oscura: en una foto de 60 megapíxeles cada borde mide pocos píxeles
+  de ancho, y al achicarla esos bordes finos se mezclan con el fondo negro. Por eso agrego un recorte al 100 %.
+</p>
+
+<h3>7.2 Recorte al 100 % (misma zona en las dos imágenes)</h3>
+<p>Zona de 1200 × 800 píxeles a partir de la posición (3800, 2000), sin redimensionar:</p>
+<div class="par">
+  <figure>
+    <img src="img/original_recorte.jpg" alt="Recorte de la imagen original: dos torres con ventanas">
+    <figcaption><b>Figura 3.</b> Original, recorte 1:1.</figcaption>
+  </figure>
+  <figure>
+    <img src="img/bordes_recorte.png" alt="Recorte de la imagen de bordes: contornos blancos de las torres y ventanas">
+    <figcaption><b>Figura 4.</b> Bordes Sobel, mismo recorte 1:1.</figcaption>
+  </figure>
+</div>
+<p>En el recorte se ve lo que hace cada máscara:</p>
+<ul>
+  <li>Los <b>lados de las torres</b> son líneas verticales blancas e intensas: ahí hay un cambio fuerte de izquierda a
+      derecha (edificio oscuro contra cielo claro) y G<sub>x</sub> da valores altos.</li>
+  <li>Los <b>techos y la parte superior</b> de los edificios son bordes horizontales que detecta G<sub>y</sub>.</li>
+  <li>Las <b>ventanas</b> aparecen como pequeños rectángulos porque tienen bordes en las dos direcciones.</li>
+  <li>Las <b>fachadas lisas y el cielo</b> quedan casi negros: los coeficientes de las máscaras suman 0 y, en una zona
+      uniforme, el resultado es 0. El granulado leve que se ve es el ruido de la compresión JPEG y de la foto.</li>
+  <li>Los <b>edificios del fondo</b>, que tienen poco contraste por la bruma, dan bordes más tenues.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="analisis">8. Análisis</h2>
+
+<h3>8.1 Hasta 8 hilos la aceleración crece casi en línea recta</h3>
+<p>
+  Con 8 hilos el filtro pasa de ≈ 590 ms a ≈ 76–90 ms (speedup entre 6.5× y 7.7×). El equipo tiene 8 núcleos
+  físicos, así que cada hilo ocupa su propio núcleo y trabajan de verdad al mismo tiempo. Esto funciona tan bien porque
+  el problema es muy fácil de dividir: los píxeles no dependen unos de otros, solo leen datos que nadie modifica
+  (un problema "embarazosamente paralelo").
+</p>
+
+<h3>8.2 De 8 a 16 hilos casi no mejora</h3>
+<p>
+  Con 16 hilos el tiempo es prácticamente igual que con 8 y la eficiencia cae a ≈ 47 %. Hay dos razones:
+</p>
+<ul>
+  <li><b>Hyper-Threading:</b> los 16 procesadores lógicos son 8 núcleos físicos, cada uno con 2 hilos de hardware que
+      comparten las mismas unidades de cálculo. Cuando los dos hilos hacen la misma cuenta (multiplicaciones y sumas), se
+      estorban y la ganancia es muy pequeña.</li>
+  <li><b>Ancho de banda de memoria:</b> cada pasada lee ≈ 60 MB de <code>gris</code> y escribe ≈ 60 MB de
+      <code>salida</code>. Con muchos hilos, la memoria RAM ya no entrega los datos tan rápido como los núcleos los
+      procesan.</li>
+</ul>
+
+<h3>8.3 Un hilo es igual o más lento que el secuencial</h3>
+<p>
+  Con 1 hilo el trabajo es exactamente el mismo, pero además hay que crear el <code>Thread</code>, arrancarlo y
+  esperarlo con <code>join()</code>. Por eso el speedup queda alrededor de 1× (0.95× y 1.06× en las dos ejecuciones).
+  Muestra el costo fijo de usar hilos.
+</p>
+
+<h3>8.4 Eficiencias mayores al 100 %</h3>
+<p>
+  Con 2 hilos salió una eficiencia de 117.6 % en una ejecución. No es una aceleración superlineal real: es variación de
+  medición. El procesador ajusta su frecuencia (Turbo Boost) según la carga y la temperatura, la caché se comporta
+  distinto con menos datos por núcleo y el sistema operativo tiene otros procesos. En la otra ejecución el mismo caso dio
+  107 %. Por eso no tomo un número aislado, sino la tendencia.
+</p>
+
+<h3>8.5 Ley de Amdahl: la parte que no se paraleliza</h3>
+<p>
+  La conversión a escala de grises tarda ≈ 990 ms y se hace con un solo hilo. Es más lenta que el propio filtro
+  Sobel secuencial. Si tomo las dos fases juntas:
+</p>
+<table>
+  <tr><th>Fase</th><th>Secuencial (ms)</th><th>Con 8 hilos (ms)</th></tr>
+  <tr><td>Escala de grises (no paralelizada)</td><td class="num">989.8</td><td class="num">989.8</td></tr>
+  <tr><td>Sobel</td><td class="num">589.7</td><td class="num">76.3</td></tr>
+  <tr><th>Total</th><th class="num">1579.5</th><th class="num">1066.1</th></tr>
+</table>
+<p>
+  El filtro se aceleró 7.7×, pero estas dos fases juntas solo 1579.5 / 1066.1 ≈ <b>1.48×</b>. Es la ley de Amdahl: la
+  parte secuencial (aquí ≈ 63 % del tiempo) limita la aceleración total, sin importar cuántos hilos se agreguen al resto.
+  La mejora natural sería paralelizar también la conversión a gris con el mismo reparto por filas.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="mejoras">9. Correcciones a la primera versión del código</h2>
+<p>
+  Partí de una primera propuesta de código que ya usaba Sobel y repartía filas entre hilos. Al revisarla encontré
+  varios problemas y los corregí:
+</p>
+<table>
+  <tr><th>Problema en la primera versión</th><th>Por qué era un problema</th><th>Cómo lo resolví</th></tr>
+  <tr>
+    <td><code>synchronized (salida)</code> en cada píxel</td>
+    <td>Los hilos se turnaban para escribir: se perdía el paralelismo. No hacía falta porque cada hilo escribe en filas distintas.</td>
+    <td>Lo quité y escribo en un <code>byte[]</code> con zonas separadas por hilo.</td>
+  </tr>
+  <tr>
+    <td>Medía la primera ejecución, sin calentamiento</td>
+    <td>El JIT todavía no había compilado el código y la versión secuencial salía más lenta, lo que inflaba el speedup.</td>
+    <td>3 ejecuciones de calentamiento y mediana de 5 mediciones.</td>
+  </tr>
+  <tr>
+    <td>La "versión secuencial" creaba un <code>Thread</code></td>
+    <td>No era una referencia secuencial pura.</td>
+    <td>Secuencial = bucle normal sin hilos; el caso de 1 hilo se mide aparte.</td>
+  </tr>
+  <tr>
+    <td>Probaba un solo número de hilos</td>
+    <td>No se podía ver cómo crece la aceleración ni dónde se estanca.</td>
+    <td>Pruebo 1, 2, 4, 8 y 16 hilos.</td>
+  </tr>
+  <tr>
+    <td>No comprobaba el resultado</td>
+    <td>No había evidencia de que la versión paralela calcule lo mismo.</td>
+    <td>Comparación con <code>Arrays.equals</code> en cada configuración.</td>
+  </tr>
+  <tr>
+    <td>Escribía en la imagen con <code>setSample</code> píxel a píxel</td>
+    <td>Más lento y más difícil de razonar sobre concurrencia.</td>
+    <td>Escribo en un arreglo y lo copio a la imagen una sola vez al guardar.</td>
+  </tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="conclusiones">10. Conclusiones</h2>
+<ul>
+  <li>La detección de bordes con Sobel se paraleliza muy bien: cada píxel se calcula de forma independiente leyendo datos
+      que no cambian, así que basta con repartir filas entre hilos.</li>
+  <li>Con 8 hilos (uno por núcleo físico) el filtro fue entre <b>6.5 y 7.7 veces más rápido</b> que la versión
+      secuencial, con eficiencias entre 82 % y 97 %.</li>
+  <li>Más hilos que núcleos físicos no ayudan: con 16 hilos el tiempo apenas cambia y la eficiencia baja a la mitad.</li>
+  <li>No hizo falta sincronización, porque los datos de entrada son de solo lectura y cada hilo escribe en su propia zona.
+      <code>join()</code> fue la única coordinación necesaria.</li>
+  <li>La salida paralela fue idéntica a la secuencial en todas las configuraciones: el paralelismo no cambió el resultado.</li>
+  <li>Para medir bien en Java hay que calentar el JIT y repetir las mediciones; si no, los números engañan.</li>
+  <li>La parte que no se paraleliza (la conversión a gris) limita la mejora total del programa, como predice la ley de Amdahl.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="ejecucion">11. Cómo ejecutar</h2>
+<p>Requiere JDK 17 o superior. Desde la carpeta raíz del proyecto:</p>
+<pre>./run.sh                 # Linux / macOS
+run.bat                  # Windows
+
+# o manualmente:
+javac -d out src/*.java
+java -Xmx3g -cp out DeteccionBordes</pre>
+<p>
+  En VS Code basta con abrir la carpeta y pulsar F5. El <code>README.md</code> tiene las instrucciones completas
+  y la solución a los errores más comunes.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="referencias">12. Referencias</h2>
+<ul>
+  <li>Gonzalez, R. C. y Woods, R. E. <i>Digital Image Processing</i>, 4.ª ed. Pearson, 2018. Cap. 3 (filtrado espacial) y cap. 10 (detección de bordes).</li>
+  <li>Sobel, I. y Feldman, G. "A 3×3 Isotropic Gradient Operator for Image Processing". Stanford Artificial Intelligence Project, 1968.</li>
+  <li>Oracle. <i>Java SE 21 API: <code>java.lang.Thread</code></i>. <a href="https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Thread.html">docs.oracle.com</a></li>
+  <li>Oracle. <i>The Java Language Specification, cap. 17: Threads and Locks</i> (modelo de memoria y <i>happens-before</i>). <a href="https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html">docs.oracle.com</a></li>
+  <li>Amdahl, G. M. "Validity of the single processor approach to achieving large scale computing capabilities". AFIPS, 1967.</li>
+  <li>ITU-R. <i>Recommendation BT.601</i> (coeficientes de luminancia).</li>
+  <li>Unsplash. <i>Cityscape under warm golden sky</i>. <a href="https://unsplash.com/photos/cityscape-under-warm-golden-sky-wvjjZTzsdaY">unsplash.com</a></li>
+</ul>
+
+</body>
+</html>
